@@ -15,6 +15,10 @@
 #include <TinyGsmClient.h>
 #include <PubSubClient.h>
 
+// certificate
+#include "cert-azure-iot-baltimore.h"
+#define CERT_FILE "C:\\projects\\github\\esp32-sim800l-tinygsm-azure-iot-hub-mqtt-ssl\\azure-iot-baltimore.crt"
+
 #ifdef DUMP_AT_COMMANDS
   #include <StreamDebugger.h>
   StreamDebugger debugger(SerialAT, SerialMon);
@@ -50,6 +54,44 @@ boolean mqttConnect() {
   }
 
   SerialMon.println(" success");
+}
+
+void SetupCert()
+{
+
+  modem.sendAT(GF("+FSCREATE=" CERT_FILE));
+  if (modem.waitResponse() != 1) return;
+
+  const int cert_size = sizeof(cert);
+
+  modem.sendAT(GF("+FSWRITE=" CERT_FILE ",0,"), cert_size, GF(",10"));
+  
+  if (modem.waitResponse(GF(">")) != 1) {
+    return;
+  }
+
+  for (int i = 0; i < cert_size; i++) {
+    char c = pgm_read_byte(&cert[i]);
+    modem.stream.write(c);
+  }
+
+  modem.stream.write(GSM_NL);
+  modem.stream.flush();
+
+  if (modem.waitResponse(2000) != 1) return;
+
+  modem.sendAT(GF("+SSLSETCERT=\"" CERT_FILE "\""));
+  if (modem.waitResponse() != 1) return;
+  if (modem.waitResponse(5000L, GF(GSM_NL "+SSLSETCERT:")) != 1) return;
+  const int retCode = modem.stream.readStringUntil('\n').toInt();
+
+
+  SerialMon.println();
+  SerialMon.println();
+  SerialMon.println(F("****************************"));
+  SerialMon.print(F("Setting Certificate: "));
+  SerialMon.println((0 == retCode) ? "OK" : "FAILED");
+  SerialMon.println(F("****************************"));
 }
 
 
@@ -89,8 +131,10 @@ void setup() {
   // Restart takes quite some time
   // To skip it, call init() instead of restart()
   SerialMon.println("Initializing modem...");
-  modem.restart();
-  // modem.init();
+  //modem.restart();
+  modem.init();
+
+  SetupCert();
 
   String modemInfo = modem.getModemInfo();
   SerialMon.print("Modem Info: ");
